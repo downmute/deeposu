@@ -12,10 +12,11 @@ import keyboard
 from PyQt5.QtWidgets import QMainWindow, QSpinBox, QDoubleSpinBox, QCheckBox, QPushButton, QLabel, QProgressBar, QAction, QApplication
 from PyQt5 import QtGui
 from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter('runs/4_train_epochs')
+import pickle
+writer = SummaryWriter('runs/v4_retrained')
 
 #from PPO_resnet18 import ActorCriticNetwork, PPOTrainer
-from PPO_CNN import ActorCriticNetwork, PPOTrainer
+from ppo_seperate import Agent, PPOTrainer
 from app import Ui_MainWindow
 
 
@@ -55,16 +56,7 @@ class UI(QMainWindow):
     def exit_app(self):
         ## pause the map to prevent score from changing   
         camera.release()     
-        pdi.press('escape', _pause=False)
-        
-        ## save models if the current model is doing well
-        global best_score, score, ppo
-        if (best_score == None) or (score > best_score):
-            ppo.save_checkpoint()
-            
-        self.error_msg.setText("Model saved.")
-        QApplication.processEvents()
-        
+        pdi.press('escape', _pause=False)       
         self.close()
     
     ## when run is clicked, start the training
@@ -91,7 +83,7 @@ class UI(QMainWindow):
             except Exception: 
                 name = ""
         
-        if name != '0':
+        if name != ' ':
             self.error_msg.show()
             self.error_msg.setText("Error: Please log out of your osu! account")
             QApplication.processEvents()
@@ -111,16 +103,14 @@ class UI(QMainWindow):
         except Exception:
             pass
         
-        agent = ActorCriticNetwork(n_actions=NUM_ACTIONS)
+        agent = Agent(n_actions=NUM_ACTIONS)
         agent = agent.to(DEVICE)
         
         ppo = PPOTrainer(
             agent, 
-            policy_lr = ALPHA,
-            value_lr = 0.001,
+            lr = ALPHA,
             target_kl_div = 0.02,
-            policy_train_iters = NUM_EPOCHS,
-            value_train_iters = NUM_EPOCHS
+            train_iters = NUM_EPOCHS,
         )
         
         if CHECKPOINT:
@@ -132,8 +122,20 @@ class UI(QMainWindow):
                 QApplication.processEvents()
                 
         ## store the highest reward of the bot - shows improvement
-        best_score = None
-        score_history = []
+        '''best_score = agent.get_score()
+        print(f'Best score: {best_score}')
+        try:
+            best_score = float(best_score)
+        except:
+            best_score = None'''
+        
+        try:
+            with open('./highscore.dat') as f:
+                best_score = pickle.load(f)
+        except:
+            print('Could not find highscore file')
+            best_score = -1000000
+        print(f'Best score: {best_score}')
         
         ## storing steps for when to update 
         learn_iters = 0
@@ -153,7 +155,8 @@ class UI(QMainWindow):
         if train == False:
             agent.eval()
         
-        total_steps = 0
+        total_steps = 0   
+        rewards_history = [None,None,None,None,None,None,None,None,None,None]   
         
         for i in range(NUM_GAMES):   
             ## reset the environment and scores
@@ -168,15 +171,14 @@ class UI(QMainWindow):
             observation = self.initialize()
         
             ## do a full rollout using the old policy
-            train_data, reward, n_steps = self.rollout(model=agent, obs=observation, train=train)
+            train_data, reward, n_steps = self.rollout(agent=agent, obs=observation, train=train)
             
             ## if playing only is on, don't train model
-            if train == True:
-                score_history.append(reward)
+            if train == True and i != 0:
             
                 ## shuffle 
                 permute_idxs = np.random.permutation(len(train_data[0]))
-                                                    
+                                                  
                 ## policy data          
                 for data in range(len(train_data)):
                     train_data[data] = np.array(train_data[data], dtype=[('O', np.float32)]).astype(np.float32)
@@ -193,60 +195,83 @@ class UI(QMainWindow):
                                     dtype=torch.float32, device=DEVICE)
                 
                 ## ppo trainer automatically trains multiple epochs
-                trainp, policy_loss = ppo.train_policy(obs, acts, act_log_probs, gaes)  
-                if trainp == False:
-                    self.error_msg.setText("Error: Policy training failed.")
+                trained, kl_divs, p_loss, v_loss, t_loss = ppo.train(obs, acts, act_log_probs, gaes, returns, batches=8)  
+                if trained == False:
+                    self.error_msg.setText("Error: Training failed.")
                     self.error_msg.show()
                     QApplication.processEvents()
                 else:
-                    self.error_msg.setText("Trained policy.")
+                    self.error_msg.setText("Trained.")
                     self.error_msg.show()
                     QApplication.processEvents()
-                    
-                trainv, value_loss = ppo.train_value(obs, returns)        
-                if trainv == False:
-                    self.error_msg.setText("Error: Value model training failed.")
-                    self.error_msg.show()
-                    QApplication.processEvents()
-                else:
-                    self.error_msg.setText("Trained value model.")
-                    self.error_msg.show()
-                    QApplication.processEvents()
+                    ()
                 
                 learn_iters += NUM_EPOCHS
-                
-                ## if current score is better than past scores, save the model
-                score_history.append(reward)
+                                
                 
                 ## log data on tensorboard for evaluation
                 writer.add_scalar('reward',
-                                  reward,
-                                  i)
+                                reward,
+                                i)
                 
-                writer.add_scalar('policy_loss',
-                                  policy_loss,
-                                  i)
+                writer.add_scalar('avg_policy_loss',
+                                p_loss,
+                                i)
                 
-                writer.add_scalar('value_loss',
-                                  value_loss,
-                                  i)
-            
-                if (best_score == None) or (reward > best_score):
+                writer.add_scalar('avg_value_loss',
+                                v_loss,
+                                i)
+                
+                writer.add_scalar('avg_total_loss',
+                                t_loss,
+                                i)
+                
+                for n in range(len(kl_divs)):
+                    writer.add_scalar('kl_div',
+                                      kl_divs[n],
+                                     (i*len(kl_divs))+n)
+                    
+                
+                ## if current score is better than past scores, save the model
+                '''best_score = agent.get_score()
+                print(f'Best score before: {best_score}')
+                try:
+                    best_score = float(best_score)
+                except:
+                    best_score = None
+                print(f'Best score after: {best_score}')'''
+                
+                total_rewards = 0
+                minus_count = 0
+                rewards_history = rewards_history[1:]
+                rewards_history.append(reward)
+                for reward in rewards_history:
+                    if reward != None:
+                        total_rewards += reward
+                    else:
+                        minus_count += 1
+                mean_reward = total_rewards/(len(rewards_history) - minus_count)
+                
+                if mean_reward > best_score:
                     self.error_msg.show()
-                    self.error_msg.setText("Performance improved. Updating model.")
+                    self.error_msg.setText("Model saved!")
                     QApplication.processEvents()
                     best_score = reward
+                    with open('./highscore.dat', 'wb') as f:
+                        pickle.dump(best_score, f)
+                    #agent.set_score(f'{best_score}')
                     ppo.save_checkpoint()
                     print('Saved Checkpoint')
 
-            ## summarize performance
-            total_steps += n_steps
-            self.episode.setText(f"Episode: {i+1}") 
-            self.score.setText(f"Score: {round(reward,5)}")
-            self.time_steps.setText(f"Time Steps: {total_steps}")
-            self.learn_steps.setText(f"Learning Steps: {learn_iters}")
-            self.progress_bar.setValue(i+1)
-            QApplication.processEvents()
+                
+                ## summarize performance
+                total_steps += n_steps
+                self.episode.setText(f"Episode: {i+1}") 
+                self.score.setText(f"Score: {round(reward,5)}")
+                self.time_steps.setText(f"Time Steps: {total_steps}")
+                self.learn_steps.setText(f"Learning Steps: {learn_iters}")
+                self.progress_bar.setValue(i+1)
+                QApplication.processEvents()
             
             
     ## stop the program
@@ -262,21 +287,18 @@ class UI(QMainWindow):
         ## get the image of the window
         frame = camera.get_latest_frame()
 
-        ## downsample current screen, turn it into a square
-        #im = cv2.resize(frame, dsize=(96,96))
-        
+        ## downsample current screen, turn it into a square        
         im = cv2.resize(frame, dsize=(96,96))        
-            
-        ## take the image and turn it into a tensor
-        tensor = torch.unsqueeze(torchvision.transforms.ToTensor()(im), 0)
         
+        ## take the image and turn it into a tensor
+        tensor = torch.unsqueeze(torchvision.transforms.ToTensor()(im), 0)        
         tensor = tensor.to(device=torch.device('cuda:0' if torch.cuda.is_available() else 'cpu'))
         return tensor
 
     ## formula for reward calculation
     def calc_reward(self, perfects, goods, bads, misses):
         #return round(((perfects+goods*0.5+bads*0.2)*(combo+1)-(misses*50))*0.001, 4)
-        return round(((perfects+goods*0.5+bads*0.2-misses*100))*0.001, 4)
+        return (perfects*1+goods*0.25+bads*0.1-misses*10)*0.00001
 
     ## one timestep - do action sent from model
     def step(self, action):
@@ -358,7 +380,7 @@ class UI(QMainWindow):
 
     def restart(self, train=True):
         if train == True:
-            '''pdi.keyDown('escape')
+            pdi.keyDown('escape')
             time.sleep(0.5)
             pdi.keyUp('escape')
             pdi.keyDown('alt', _pause=False)
@@ -367,10 +389,12 @@ class UI(QMainWindow):
             time.sleep(0.25)
             pdi.keyUp('alt', _pause=False)
             pdi.keyUp('f4', _pause=False)
-            time.sleep(0.25)
+            time.sleep(1)
+            '''
             pdi.keyDown("right")
             time.sleep(0.5)
-            pdi.keyUp("right")'''
+            pdi.keyUp("right")
+            '''
             pdi.keyDown('enter')
             time.sleep(0.5)
             pdi.keyUp('enter')
@@ -400,7 +424,7 @@ class UI(QMainWindow):
             pdi.press('space')  
 
 
-    def discount_rewards(self, rewards, gamma=0.99):
+    def discount_rewards(self, rewards, gamma=0.98):
         new_rewards = [float(rewards[-1])]
         for i in reversed(range(len(rewards)-1)):
             new_rewards.append(float(rewards[i]) + gamma*new_rewards[-1])
@@ -420,12 +444,12 @@ class UI(QMainWindow):
         mean = np.mean(gaes[::-1])
         std_dev = np.std(gaes[::-1])
 
-        normalized_gaes = [(gae-mean)/std_dev+1e-8 for gae in (gaes[::-1])]
+        normalized_gaes = [(gae-mean)/(std_dev+1e-8) for gae in (gaes[::-1])]
             
         return np.array(normalized_gaes)
         
         
-    def rollout(self, model, obs, train=True):
+    def rollout(self, agent, obs, train=True):
         ## observation, action, reward, value, act_log_probs
         train_data = [[],[],[],[],[]]
         
@@ -437,7 +461,8 @@ class UI(QMainWindow):
             try:
                 n_steps += 1
 
-                logits, val = model(obs)
+                logits, val = agent.get_action_and_value(obs)
+    
                 act_distribution = Categorical(logits=logits)
                 act = act_distribution.sample()
         
@@ -454,7 +479,7 @@ class UI(QMainWindow):
                             pass
                         train_data[i].append(item)
                     
-                    if n_steps == 1500:
+                    if n_steps == 1024:
                         camera.stop()
                         pdi.press('escape', _pause=False)
                         break    
@@ -477,6 +502,7 @@ class UI(QMainWindow):
             train_data[3] = self.calculate_gaes(train_data[2], train_data[3])
                 
         return train_data, ep_reward, n_steps
+    
 
 
 if __name__ == "__main__":   

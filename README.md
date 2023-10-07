@@ -35,6 +35,8 @@ Ensure StreamCompanion and osu! are open, or the program will not work properly!
 Run the main.py file after installing all required libraries.
 
 Run osu!
+
+Ensure your monitor is on 
  
 
 
