@@ -230,16 +230,6 @@ class UI(QMainWindow):
                     writer.add_scalar('kl_div',
                                       kl_divs[n],
                                      (i*len(kl_divs))+n)
-                    
-                
-                ## if current score is better than past scores, save the model
-                '''best_score = agent.get_score()
-                print(f'Best score before: {best_score}')
-                try:
-                    best_score = float(best_score)
-                except:
-                    best_score = None
-                print(f'Best score after: {best_score}')'''
                 
                 total_rewards = 0
                 minus_count = 0
@@ -262,6 +252,8 @@ class UI(QMainWindow):
                     #agent.set_score(f'{best_score}')
                     ppo.save_checkpoint()
                     print('Saved Checkpoint')
+                
+                ppo.routine_save()
 
                 
                 ## summarize performance
@@ -424,7 +416,7 @@ class UI(QMainWindow):
             pdi.press('space')  
 
 
-    def discount_rewards(self, rewards, gamma=0.98):
+    def discount_rewards(self, rewards, gamma=0.95):
         new_rewards = [float(rewards[-1])]
         for i in reversed(range(len(rewards)-1)):
             new_rewards.append(float(rewards[i]) + gamma*new_rewards[-1])

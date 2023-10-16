@@ -33,3 +33,14 @@ new_runs/events.out.tfevents.1696312247.DESKTOP-L548GCE.20320.0
 new_runs/events.out.tfevents.1696401283.DESKTOP-L548GCE.14992.0
 runs/v4_retrained/events.out.tfevents.1696491013.DESKTOP-L548GCE.16348.0
 __pycache__/app.cpython-37.pyc
+models/ppo_CNN_v5_best.pth
+models/ppo_CNN_v6_best.pth
+models/ppo_CNN_v6.pth
+new_runs/events.out.tfevents.1696491013.DESKTOP-L548GCE.16348.0
+new_runs/events.out.tfevents.1696668414.DESKTOP-L548GCE.1072.0
+new_runs/events.out.tfevents.1696832217.DESKTOP-L548GCE.9400.0
+new_runs/events.out.tfevents.1696914085.DESKTOP-L548GCE.22428.0
+new_runs/events.out.tfevents.1696999193.DESKTOP-L548GCE.22412.0
+new_runs/events.out.tfevents.1697092723.DESKTOP-L548GCE.18984.0
+new_runs/events.out.tfevents.1697266630.DESKTOP-L548GCE.11896.0
+runs/v4_retrained/events.out.tfevents.1697354533.DESKTOP-L548GCE.23500.0

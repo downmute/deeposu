@@ -89,7 +89,7 @@ class PPOTrainer():
                  target_kl_div=0.02,
                  train_iters=4,
                  lr=1e-4,
-                 entropy_coefficient=1e-2,
+                 entropy_coefficient=1e-3,
                  value_coefficient=0.5,
                  grad_max_norm=0.5,
                  chkpt_dir="./models/"):
@@ -97,7 +97,9 @@ class PPOTrainer():
         self.ppo_clip_val = ppo_clip_val
         self.target_kl_div = target_kl_div
         self.train_iters = train_iters
-        self.checkpoint_file = chkpt_dir + "ppo_CNN_v5.pth"
+        self.checkpoint_file_best = chkpt_dir + "ppo_CNN_v6_best.pth"
+        self.checkpoint_file_current = chkpt_dir + "ppo_CNN_v6.pth"
+        self.checkpoint_file_old = chkpt_dir + "ppo_CNN_v5_best.pth"
         self.entropy_coefficient = entropy_coefficient
         self.value_coefficient = value_coefficient
         self.grad_max_norm = grad_max_norm
@@ -360,10 +362,16 @@ class PPOTrainer():
         T.save({'agent_state_dict': self.agent.state_dict(),
                 'scaler_state_dict': self.scaler.state_dict(),
                 'optim_state_dict': self.optim.state_dict(),},
-                self.checkpoint_file, _use_new_zipfile_serialization=False)
+                self.checkpoint_file_best, _use_new_zipfile_serialization=False)
+        
+    def routine_save(self):
+        T.save({'agent_state_dict': self.agent.state_dict(),
+                'scaler_state_dict': self.scaler.state_dict(),
+                'optim_state_dict': self.optim.state_dict(),},
+                self.checkpoint_file_current, _use_new_zipfile_serialization=False)
                 
     def load_checkpoint(self):
-        ckpt = T.load(self.checkpoint_file)
+        ckpt = T.load(self.checkpoint_file_old)
         self.agent.load_state_dict(ckpt['agent_state_dict'])
         self.optim.load_state_dict(ckpt['optim_state_dict']) 
         self.scaler.load_state_dict(ckpt['scaler_state_dict'])
